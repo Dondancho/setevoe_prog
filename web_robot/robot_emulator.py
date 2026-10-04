@@ -23,3 +23,7 @@ while True:
         pass
 
     print(f"[{cmd}] -> position: x={x:.1f}, y={y:.1f}")
+
+    # Отправляем состояние обратно
+    reply = f'x={x:.1f},y={y:.1f}'
+    sock.sendto(reply.encode('ascii'), addr)
