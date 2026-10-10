@@ -20,8 +20,14 @@
         }
         .btn:active, .btn.active { background: #4caf50; }
         .stop { background: #a00; }
+        #map {
+            background: #111;
+            border-radius: 10px;
+            margin-top: 20px;
+            border: 1px solid #333;
+        }
         .telemetry {
-            margin-top: 30px;
+            margin-top: 20px;
             padding: 15px;
             background: #222;
             border-radius: 10px;
@@ -48,6 +54,8 @@
         <button class="btn" data-cmd="back">↓</button>
     </div>
 
+    <canvas id="map" width="400" height="400"></canvas>
+
     <div class="telemetry">
         Позиция: X = <span id="x">0.0</span>, Y = <span id="y">0.0</span>
     </div>
@@ -58,6 +66,81 @@
     <script>
         const socket = io();
 
+        // --- Canvas ---
+        const canvas = document.getElementById('map');
+        const ctx = canvas.getContext('2d');
+        const CENTER_X = canvas.width / 2;
+        const CENTER_Y = canvas.height / 2;
+        const SCALE = 20;
+        const trajectory = [];
+
+        function toPixel(x, y) {
+            return {
+                px: CENTER_X + x * SCALE,
+                py: CENTER_Y - y * SCALE
+            };
+        }
+
+        function drawMap(robotX, robotY) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Сетка (мелкая — каждые SCALE/2 пикселей)
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= canvas.width; i += SCALE / 2) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, canvas.height);
+                ctx.stroke();
+            }
+            for (let i = 0; i <= canvas.height; i += SCALE / 2) {
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(canvas.width, i);
+                ctx.stroke();
+            }
+
+            // Оси (крест в центре)
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(CENTER_X, 0);
+            ctx.lineTo(CENTER_X, canvas.height);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, CENTER_Y);
+            ctx.lineTo(canvas.width, CENTER_Y);
+            ctx.stroke();
+
+            // Траектория
+            if (trajectory.length > 1) {
+                ctx.strokeStyle = '#4caf50';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                const start = toPixel(trajectory[0].x, trajectory[0].y);
+                ctx.moveTo(start.px, start.py);
+                for (let i = 1; i < trajectory.length; i++) {
+                    const p = toPixel(trajectory[i].x, trajectory[i].y);
+                    ctx.lineTo(p.px, p.py);
+                }
+                ctx.stroke();
+            }
+
+            // Робот (зелёный круг)
+            const robotPos = toPixel(robotX, robotY);
+            ctx.fillStyle = '#4caf50';
+            ctx.beginPath();
+            ctx.arc(robotPos.px, robotPos.py, 8, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // Центр робота (белая точка)
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(robotPos.px, robotPos.py, 3, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+
+        // --- WebSocket ---
         socket.on('connect', () => {
             document.getElementById('status').innerHTML =
                 'Соединение: <span id="conn" class="connected">активно</span>';
@@ -76,6 +159,13 @@
                 conn.className = state.connected ? 'connected' : 'disconnected';
                 conn.textContent = state.connected ? 'активно' : 'нет робота';
             }
+
+            // Обновляем траекторию и карту
+            trajectory.push({ x: state.x, y: state.y });
+            if (trajectory.length > 500) {
+                trajectory.shift();
+            }
+            drawMap(state.x, state.y);
         });
 
         function sendCommand(cmd) {
