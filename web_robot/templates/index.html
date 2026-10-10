@@ -4,11 +4,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Robot Control</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background: #1a1a1a; color: #eee; }
+        body { font-family: sans-serif; text-align: center; padding: 20px; background: #1a1a1a; color: #eee; user-select: none; }
         h1 { font-size: 1.5em; }
         .btn {
             display: inline-block;
-            width: 80px; height: 80px;
+            width: 90px; height: 90px;
             margin: 5px;
             font-size: 2em;
             border: none;
@@ -16,8 +16,9 @@
             background: #333;
             color: #fff;
             cursor: pointer;
+            touch-action: none;
         }
-        .btn:active { background: #555; }
+        .btn:active, .btn.active { background: #4caf50; }
         .stop { background: #a00; }
         .telemetry {
             margin-top: 30px;
@@ -28,44 +29,94 @@
         }
         .telemetry span { color: #4caf50; font-weight: bold; }
         .status { margin-top: 10px; font-size: 0.9em; color: #888; }
+        .connected { color: #4caf50; }
+        .disconnected { color: #f44336; }
     </style>
+    <script src="/static/socket.io.min.js"></script>
 </head>
 <body>
     <h1>Robot Control</h1>
     <div>
-        <button class="btn" onclick="send('forward')">↑</button>
+        <button class="btn" data-cmd="forward">↑</button>
     </div>
     <div>
-        <button class="btn" onclick="send('left')">←</button>
-        <button class="btn stop" onclick="send('stop')">■</button>
-        <button class="btn" onclick="send('right')">→</button>
+        <button class="btn" data-cmd="left">←</button>
+        <button class="btn stop" data-cmd="stop">■</button>
+        <button class="btn" data-cmd="right">→</button>
     </div>
     <div>
-        <button class="btn" onclick="send('back')">↓</button>
+        <button class="btn" data-cmd="back">↓</button>
     </div>
 
     <div class="telemetry">
         Позиция: X = <span id="x">0.0</span>, Y = <span id="y">0.0</span>
     </div>
-    <div class="status" id="status">Готов</div>
+    <div class="status" id="status">
+        Соединение: <span id="conn" class="disconnected">отключено</span>
+    </div>
 
     <script>
-        function send(cmd) {
-            fetch('/cmd/' + cmd)
-                .then(r => r.text())
-                .then(t => {
-                    document.getElementById('status').textContent = 'Ответ: ' + t;
-                    // Парсим "x=0.5,y=1.0"
-                    const match = t.match(/x=([-\d.]+),y=([-\d.]+)/);
-                    if (match) {
-                        document.getElementById('x').textContent = match[1];
-                        document.getElementById('y').textContent = match[2];
-                    }
-                });
+        const socket = io();
+
+        socket.on('connect', () => {
+            document.getElementById('status').innerHTML =
+                'Соединение: <span id="conn" class="connected">активно</span>';
+        });
+
+        socket.on('disconnect', () => {
+            document.getElementById('status').innerHTML =
+                'Соединение: <span id="conn" class="disconnected">отключено</span>';
+        });
+
+        socket.on('state', (state) => {
+            document.getElementById('x').textContent = state.x.toFixed(1);
+            document.getElementById('y').textContent = state.y.toFixed(1);
+            const conn = document.getElementById('conn');
+            if (conn) {
+                conn.className = state.connected ? 'connected' : 'disconnected';
+                conn.textContent = state.connected ? 'активно' : 'нет робота';
+            }
+        });
+
+        function sendCommand(cmd) {
+            socket.emit('command', { cmd: cmd });
         }
+
+        document.querySelectorAll('.btn').forEach(btn => {
+            const cmd = btn.dataset.cmd;
+            let interval = null;
+
+            const start = (e) => {
+                e.preventDefault();
+                btn.classList.add('active');
+                sendCommand(cmd);
+                if (cmd !== 'stop') {
+                    interval = setInterval(() => sendCommand(cmd), 100);
+                }
+            };
+            const stop = (e) => {
+                e.preventDefault();
+                btn.classList.remove('active');
+                if (interval) {
+                    clearInterval(interval);
+                    interval = null;
+                }
+            };
+
+            btn.addEventListener('mousedown', start);
+            btn.addEventListener('mouseup', stop);
+            btn.addEventListener('mouseleave', stop);
+            btn.addEventListener('touchstart', start);
+            btn.addEventListener('touchend', stop);
+            btn.addEventListener('touchcancel', stop);
+        });
+
         document.addEventListener('keydown', e => {
             const map = {ArrowUp:'forward', ArrowDown:'back', ArrowLeft:'left', ArrowRight:'right', ' ':'stop'};
-            if (map[e.key]) { send(map[e.key]); e.preventDefault(); }
+            if (map[e.key]) {
+                sendCommand(map[e.key]);
+                e.preventDefault();
+            }
         });
     </script>
 </body>
